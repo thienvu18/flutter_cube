@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:vector_math/vector_math_64.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -8,27 +9,27 @@ import 'dart:ui';
 class Material {
   Material()
       : name = '',
-        ka = Vector3.zero(),
-        kd = Vector3.zero(),
-        ks = Vector3.zero(),
+        ambient = Vector3.all(0.1),
+        diffuse = Vector3.all(0.8),
+        specular = Vector3.all(0.5),
         ke = Vector3.zero(),
         tf = Vector3.zero(),
         mapKa = '',
         mapKd = '',
         mapKe = '',
-        ns = 0,
+        shininess = 0,
         ni = 0,
-        d = 0,
+        opacity = 1.0,
         illum = 0;
   String name;
-  Vector3 ka;
-  Vector3 kd;
-  Vector3 ks;
+  Vector3 ambient;
+  Vector3 diffuse;
+  Vector3 specular;
   Vector3 ke;
   Vector3 tf;
-  double ns;
+  double shininess;
   double ni;
-  double d;
+  double opacity;
   int illum;
   String mapKa;
   String mapKd;
@@ -38,11 +39,16 @@ class Material {
 /// Loading material from Material Library File (.mtl).
 /// Reference：http://paulbourke.net/dataformats/mtl/
 ///
-Future<Map<String, Material>> loadMtl(String fileName) async {
+Future<Map<String, Material>> loadMtl(String fileName,
+    {bool isAsset = true}) async {
   final materials = Map<String, Material>();
   String data;
   try {
-    data = await rootBundle.loadString(fileName);
+    if (isAsset) {
+      data = await rootBundle.loadString(fileName);
+    } else {
+      data = await File(fileName).readAsString();
+    }
   } catch (_) {
     return materials;
   }
@@ -61,25 +67,29 @@ Future<Map<String, Material>> loadMtl(String fileName) async {
         break;
       case 'Ka':
         if (parts.length >= 4) {
-          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]), double.parse(parts[3]));
-          material.ka = v;
+          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]),
+              double.parse(parts[3]));
+          material.ambient = v;
         }
         break;
       case 'Kd':
         if (parts.length >= 4) {
-          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]), double.parse(parts[3]));
-          material.kd = v;
+          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]),
+              double.parse(parts[3]));
+          material.diffuse = v;
         }
         break;
       case 'Ks':
         if (parts.length >= 4) {
-          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]), double.parse(parts[3]));
-          material.ks = v;
+          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]),
+              double.parse(parts[3]));
+          material.specular = v;
         }
         break;
       case 'Ke':
         if (parts.length >= 4) {
-          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]), double.parse(parts[3]));
+          final v = Vector3(double.parse(parts[1]), double.parse(parts[2]),
+              double.parse(parts[3]));
           material.ke = v;
         }
         break;
@@ -95,7 +105,7 @@ Future<Map<String, Material>> loadMtl(String fileName) async {
         break;
       case 'Ns':
         if (parts.length >= 2) {
-          material.ns = double.parse(parts[1]);
+          material.shininess = double.parse(parts[1]);
         }
         break;
       case 'Ni':
@@ -105,7 +115,7 @@ Future<Map<String, Material>> loadMtl(String fileName) async {
         break;
       case 'd':
         if (parts.length >= 2) {
-          material.d = double.parse(parts[1]);
+          material.opacity = double.parse(parts[1]);
         }
         break;
       case 'illum':
@@ -120,10 +130,17 @@ Future<Map<String, Material>> loadMtl(String fileName) async {
 }
 
 /// load an image from asset
-Future<Image> loadImageFromAsset(String fileName) {
+Future<Image> loadImageFromAsset(String fileName, {bool isAsset = true}) {
   final c = Completer<Image>();
-  rootBundle.load(fileName).then((data) {
-    instantiateImageCodec(data.buffer.asUint8List()).then((codec) {
+  var dataFuture;
+  if (isAsset) {
+    dataFuture =
+        rootBundle.load(fileName).then((data) => data.buffer.asUint8List());
+  } else {
+    dataFuture = File(fileName).readAsBytes();
+  }
+  dataFuture.then((data) {
+    instantiateImageCodec(data).then((codec) {
       codec.getNextFrame().then((frameInfo) {
         c.complete(frameInfo.image);
       });
@@ -135,7 +152,8 @@ Future<Image> loadImageFromAsset(String fileName) {
 }
 
 /// load texture from asset
-Future<MapEntry<String, Image>> loadTexture(Material material, String basePath) async {
+Future<MapEntry<String, Image>> loadTexture(Material material, String basePath,
+    {bool isAsset = true}) async {
   // get the texture file name
   if (material == null) return null;
   String fileName = material.mapKa;
@@ -148,7 +166,7 @@ Future<MapEntry<String, Image>> loadTexture(Material material, String basePath) 
   while (dirList.length > 0) {
     fileName = path.join(basePath, path.joinAll(dirList));
     try {
-      image = await loadImageFromAsset(fileName);
+      image = await loadImageFromAsset(fileName, isAsset: isAsset);
     } catch (_) {}
     if (image != null) return MapEntry(fileName, image);
     dirList.removeAt(0);
@@ -169,5 +187,11 @@ Future<Uint32List> getImagePixels(Image image) async {
 
 /// Convert Vector3 to Color
 Color toColor(Vector3 v, [double opacity = 1.0]) {
-  return Color.fromRGBO((v.r * 255).toInt(), (v.g * 255).toInt(), (v.b * 255).toInt(), opacity);
+  return Color.fromRGBO(
+      (v.r * 255).toInt(), (v.g * 255).toInt(), (v.b * 255).toInt(), opacity);
+}
+
+/// Convert Color to Vector3
+Vector3 fromColor(Color color) {
+  return Vector3(color.red / 255, color.green / 255, color.blue / 255);
 }

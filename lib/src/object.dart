@@ -1,7 +1,9 @@
 import 'dart:ui';
+
 import 'package:vector_math/vector_math_64.dart';
-import 'scene.dart';
+
 import 'mesh.dart';
+import 'scene.dart';
 
 class Object {
   Object({
@@ -14,9 +16,11 @@ class Object {
     this.parent,
     this.children,
     this.backfaceCulling = true,
+    this.lighting = false,
     this.visiable = true,
     bool normalized = true,
     String fileName,
+    bool isAsset = true,
   }) {
     if (position != null) position.copyInto(this.position);
     if (rotation != null) rotation.copyInto(this.rotation);
@@ -31,13 +35,17 @@ class Object {
 
     // load mesh from obj file
     if (fileName != null) {
-      loadObj(fileName, normalized).then((List<Mesh> meshes) {
+      loadObj(fileName, normalized, isAsset: isAsset).then((List<Mesh> meshes) {
         if (meshes.length == 1) {
           mesh = meshes[0];
         } else if (meshes.length > 1) {
           // multiple objects
           for (Mesh mesh in meshes) {
-            add(Object(name: mesh.name, mesh: mesh, backfaceCulling: backfaceCulling));
+            add(Object(
+                name: mesh.name,
+                mesh: mesh,
+                backfaceCulling: backfaceCulling,
+                lighting: lighting));
           }
         }
         this.scene?.objectCreated(this);
@@ -81,6 +89,9 @@ class Object {
   /// The backface will be culled without rendering.
   bool backfaceCulling;
 
+  /// Enable basic lighting, default to false.
+  bool lighting;
+
   /// Is this object visiable.
   bool visiable;
 
@@ -88,7 +99,11 @@ class Object {
   final Matrix4 transform = Matrix4.identity();
 
   void updateTransform() {
-    final Matrix4 m = Matrix4.compose(position, Quaternion.euler(radians(rotation.y), radians(rotation.x), radians(rotation.z)), scale);
+    final Matrix4 m = Matrix4.compose(
+        position,
+        Quaternion.euler(
+            radians(rotation.y), radians(rotation.x), radians(rotation.z)),
+        scale);
     transform.setFrom(m);
   }
 
